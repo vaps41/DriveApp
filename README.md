@@ -1,4 +1,4 @@
-![Texto descritivo](src/logo.png)
+![Texto descritivo](src/favicon/vecteezy_uber-logo-png-uber-icon-transparent-png_27127501.png)
 ServApp - Marketplace de Serviços sob Demanda
 
 O ServApp é um protótipo funcional de um aplicativo de prestação de serviços (no estilo "Uber para Serviços"), construído com foco numa excelente experiência de utilizador e interface moderna.
