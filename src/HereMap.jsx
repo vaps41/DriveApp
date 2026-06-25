@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import carImg from './carro.png';
 
 export default function HereMap({ apikey, startCoord, endCoord, isSimulating, onSimulationDone, onRouteCalculated }) {
   const mapContainer = useRef(null);
@@ -8,11 +9,11 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
   const objectsRef = useRef({ startMarker: null, endMarker: null, routeLine: null });
   const animTimer = useRef(null);
 
-  // 📍 DEEP DEBUG 1: Guardar a função atualizada numa referência para evitar "Stale Closures"
+  // Garantia de que a função de callback está sempre atualizada na memória
   const callbackRef = useRef(onSimulationDone);
   useEffect(() => { callbackRef.current = onSimulationDone; }, [onSimulationDone]);
 
-  // 📍 DEEP DEBUG 2: Trava de segurança. A simulação só arranca quando a rota existir.
+  // Trava de segurança para a simulação só iniciar quando a linha existir
   const [routeReady, setRouteReady] = useState(false);
 
   // Inicialização Única do Mapa
@@ -41,13 +42,12 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
     };
   }, [apikey]);
 
-  // Extrair valores primitivos para o React não re-renderizar em falso
   const startLat = startCoord?.lat;
   const startLng = startCoord?.lng;
   const endLat = endCoord?.lat;
   const endLng = endCoord?.lng;
 
-  // Traçar a Rota e os Pinos
+  // Traçar a Rota e colocar os Pinos
   useEffect(() => {
     if (!mapInstance.current || !startLat || !startLng || !endLat || !endLng) return;
     
@@ -55,27 +55,33 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
     const platform = platformRef.current;
     const obs = objectsRef.current;
 
-    setRouteReady(false); // Bloqueia a animação até a nova rota estar calculada
+    setRouteReady(false); // Bloqueia a animação até termos a rota
 
-    // 📍 DEEP DEBUG 3: Limpeza 100% segura com Try-Catch
-    // Evita que o mapa "crashe" e bloqueie a segunda viagem
-    try {
-      const objectsToRemove = [];
-      if (obs.routeLine) objectsToRemove.push(obs.routeLine);
-      if (obs.startMarker) objectsToRemove.push(obs.startMarker);
-      if (obs.endMarker) objectsToRemove.push(obs.endMarker);
-      
-      if (objectsToRemove.length > 0) {
-        map.removeObjects(objectsToRemove);
-      }
-    } catch (e) {
-      console.warn("Aviso ignorado ao limpar objetos antigos do mapa:", e);
-    }
+    // Limpeza segura dos objetos da viagem anterior
+    const existingObjects = map.getObjects();
+    const toRemove = existingObjects.filter(obj => obj === obs.routeLine || obj === obs.startMarker || obj === obs.endMarker);
+    if (toRemove.length > 0) map.removeObjects(toRemove);
 
-    // Cria os Novos Pinos Fixos
-    obs.startMarker = new window.H.map.Marker({ lat: startLat, lng: startLng });
+    // 🚗 INSERÇÃO DA IMAGEM DO CARRO AQUI
+    const carIcon = new window.H.map.Icon(carImg, { size: { w: 48, h: 48 }, anchor: { x: 24, y: 24 } });
+    
+    // O Marcador inicial agora é o Carro, o Marcador final é o pino padrão
+    obs.startMarker = new window.H.map.Marker({ lat: startLat, lng: startLng }, { icon: carIcon });
     obs.endMarker = new window.H.map.Marker({ lat: endLat, lng: endLng });
     map.addObjects([obs.startMarker, obs.endMarker]);
+
+    // 🛡️ SISTEMA DE SEGURANÇA: Se o GPS falhar (ex: mesma coordenada), desenha uma linha reta simulada.
+    const drawFallbackLine = () => {
+      console.warn("Criando linha de simulação reta (Fallback).");
+      const linestring = new window.H.geo.LineString();
+      linestring.pushPoint({lat: startLat, lng: startLng});
+      linestring.pushPoint({lat: endLat, lng: endLng});
+      const routeLine = new window.H.map.Polyline(linestring, { style: { lineWidth: 5, strokeColor: '#2563eb' } });
+      map.addObject(routeLine);
+      obs.routeLine = routeLine;
+      map.getViewModel().setLookAtData({ bounds: routeLine.getBoundingBox() }, true);
+      setRouteReady(true);
+    };
 
     const router = platform.getRoutingService(null, 8);
     router.calculateRoute({
@@ -104,23 +110,17 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
           });
         }
         
-        // 📍 Rota calculada com sucesso. Simulação desbloqueada!
-        setRouteReady(true);
+        setRouteReady(true); // Tudo pronto, liberta a animação
       } else {
-        // 📍 SISTEMA SALVA-VIDAS: Se o GPS falhar a traçar a rota (ex: zona sem estradas)
-        console.error("Nenhuma rota encontrada para estes pontos.");
-        if (callbackRef.current) callbackRef.current(); // Avança viagem automaticamente
+        drawFallbackLine();
       }
     }, (error) => {
-      // 📍 SISTEMA SALVA-VIDAS 2: Se a API falhar
-      console.error("Erro na API da HERE Maps:", error);
-      if (callbackRef.current) callbackRef.current(); // Avança viagem automaticamente
+      drawFallbackLine(); // Se a API estiver sem limites, cria linha reta.
     });
   }, [startLat, startLng, endLat, endLng]);
 
-  // Motor da Simulação (Otimizado)
+  // Motor da Simulação Visual do Carro
   useEffect(() => {
-    // 📍 O GPS virtual só arranca se isSimulating=true E a rota estiver pronta
     if (!isSimulating || !routeReady || !objectsRef.current.routeLine || !mapInstance.current) {
         clearTimeout(animTimer.current);
         return;
@@ -134,6 +134,7 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
       if (currentPoint < pointsCount) {
         const point = lineString.extractPoint(currentPoint);
         
+        // Move o Ícone do Carro!
         if (objectsRef.current.startMarker) {
             objectsRef.current.startMarker.setGeometry(point);
         }
@@ -143,9 +144,12 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
         }
         
         currentPoint++;
-        animTimer.current = setTimeout(animateCar, 40);
+        
+        // Velocidade baseada na complexidade da curva (Linha reta vai mais devagar para ser visível)
+        const speed = pointsCount < 10 ? 150 : 35;
+        animTimer.current = setTimeout(animateCar, speed);
       } else {
-        // Dispara a função de finalização perfeitamente sincronizada
+        // Chegou ao fim da viagem, avança automaticamente o Status do Aplicativo!
         if (callbackRef.current) callbackRef.current();
       }
     };
