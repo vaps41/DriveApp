@@ -41,7 +41,7 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
     };
   }, [apikey]);
 
-  // 📍 DEEP DEBUG 3: Extrair valores primitivos para o React não re-renderizar em falso
+  // Extrair valores primitivos para o React não re-renderizar em falso
   const startLat = startCoord?.lat;
   const startLng = startCoord?.lng;
   const endLat = endCoord?.lat;
@@ -55,14 +55,24 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
     const platform = platformRef.current;
     const obs = objectsRef.current;
 
-    setRouteReady(false); // Bloqueia a animação
+    setRouteReady(false); // Bloqueia a animação até a nova rota estar calculada
 
-    // Limpeza segura dos objetos anteriores
-    if (obs.routeLine) map.removeObject(obs.routeLine);
-    if (obs.startMarker) map.removeObject(obs.startMarker);
-    if (obs.endMarker) map.removeObject(obs.endMarker);
+    // 📍 DEEP DEBUG 3: Limpeza 100% segura com Try-Catch
+    // Evita que o mapa "crashe" e bloqueie a segunda viagem
+    try {
+      const objectsToRemove = [];
+      if (obs.routeLine) objectsToRemove.push(obs.routeLine);
+      if (obs.startMarker) objectsToRemove.push(obs.startMarker);
+      if (obs.endMarker) objectsToRemove.push(obs.endMarker);
+      
+      if (objectsToRemove.length > 0) {
+        map.removeObjects(objectsToRemove);
+      }
+    } catch (e) {
+      console.warn("Aviso ignorado ao limpar objetos antigos do mapa:", e);
+    }
 
-    // Cria os Pinos Fixos
+    // Cria os Novos Pinos Fixos
     obs.startMarker = new window.H.map.Marker({ lat: startLat, lng: startLng });
     obs.endMarker = new window.H.map.Marker({ lat: endLat, lng: endLng });
     map.addObjects([obs.startMarker, obs.endMarker]);
@@ -94,10 +104,18 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
           });
         }
         
-        // 📍 Rota finalizada e injetada no mapa. Liberta a simulação!
+        // 📍 Rota calculada com sucesso. Simulação desbloqueada!
         setRouteReady(true);
+      } else {
+        // 📍 SISTEMA SALVA-VIDAS: Se o GPS falhar a traçar a rota (ex: zona sem estradas)
+        console.error("Nenhuma rota encontrada para estes pontos.");
+        if (callbackRef.current) callbackRef.current(); // Avança viagem automaticamente
       }
-    }, console.error);
+    }, (error) => {
+      // 📍 SISTEMA SALVA-VIDAS 2: Se a API falhar
+      console.error("Erro na API da HERE Maps:", error);
+      if (callbackRef.current) callbackRef.current(); // Avança viagem automaticamente
+    });
   }, [startLat, startLng, endLat, endLng]);
 
   // Motor da Simulação (Otimizado)
@@ -127,7 +145,7 @@ export default function HereMap({ apikey, startCoord, endCoord, isSimulating, on
         currentPoint++;
         animTimer.current = setTimeout(animateCar, 40);
       } else {
-        // Dispara a função salva no DEEP DEBUG 1
+        // Dispara a função de finalização perfeitamente sincronizada
         if (callbackRef.current) callbackRef.current();
       }
     };
