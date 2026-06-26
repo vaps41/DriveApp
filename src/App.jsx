@@ -110,7 +110,14 @@ function AuthScreen({ role, onBack, onAuthSuccess }) {
       else { mockCategory = "carroX"; mockVehicle = "Chevrolet Onix 1.0"; }
     }
 
-    const startGPS = realLocation || { lat: -23.6666, lng: -46.5322 };
+    let startGPS = realLocation || { lat: -23.6666, lng: -46.5322 };
+    
+    // 🔥 AJUSTE IMPORTANTE: Se for o Motorista a fazer Login, 
+    // afastamo-lo do Passageiro em alguns metros para garantir que a rota existe e não "Congela"
+    if (!isClient && !realLocation) {
+        startGPS = { lat: startGPS.lat - 0.012, lng: startGPS.lng - 0.012 };
+    }
+
     const endGPS = { lat: startGPS.lat + 0.015, lng: startGPS.lng + 0.015 };
 
     const newUser = {
@@ -606,7 +613,7 @@ function ProviderApp({ user, onLogOut }) {
             endCoord={mapEndCoord} 
             isSimulating={isSimulating}
             onSimulationDone={() => {
-              // 📍 Avanço de Status Automático (O DEEP DEBUG 1 garante que não trava aqui)
+              // 📍 Avanço de Status Automático 
               if (orderData.status === "en_route") handleUpdateStatus("arrived", "Chegou ao local de embarque.");
               else if (orderData.status === "in_trip") handleUpdateStatus("finishing", "Chegou ao Destino Final!");
             }}
